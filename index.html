@@ -324,15 +324,15 @@ const $ = s => document.querySelector(s);
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 
 /* ---------- Сцена ---------- */
-const renderer = new THREE.WebGLRenderer({antialias:true});
-/* телефон (Давид 26.11: падал по памяти): меньше текстуры и чёткость, на компьютере всё как было */
+/* телефон (Давид 26.11: падал по памяти, подвисал на улице): меньше текстуры, чёткость, без теней; на компьютере всё как было */
 const LOW = matchMedia('(pointer:coarse)').matches || Math.min(screen.width, screen.height) < 820;
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW ? 1.5 : 2));
+const renderer = new THREE.WebGLRenderer({antialias:!LOW, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW ? 1.25 : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !LOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('#scene').appendChild(renderer.domElement);
 
@@ -1158,7 +1158,7 @@ function enterBar(){
     /* проём за дверью: тёмный, с тёплым светом из бара */
     const hole = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.4), new THREE.MeshBasicMaterial({color:0x2a140c}));
     hole.position.set(doorPos.x + .96, 1.2, doorPos.z); hole.rotation.y = -Math.PI/2; scene.add(hole);
-    const glowIn = new THREE.PointLight(0xffa860, 1.2, 4, 2); glowIn.position.set(doorPos.x + .7, 1.6, doorPos.z); scene.add(glowIn);
+    const glowIn = new THREE.PointLight(0xffa860, 1.2, 4, 2); glowIn.position.set(doorPos.x + .7, 1.6, doorPos.z); scene.add(glowIn); zoneLights = null; lightZone = null;
     /* дверь распахивается внутрь на петлях */
     const hinge = new THREE.Group(); hinge.position.set(door.position.x, 0, door.position.z - .85); scene.add(hinge);
     scene.remove(door); door.position.set(0, 1.25, .85); hinge.add(door);
@@ -1865,6 +1865,7 @@ function soundTick(dt){
 
 const syncSoundBtn = () => { const b = $('#soundBtn'), o = Music.isOn(); b.textContent = o ? '♪ Выключить звук' : '♪ Включить звук'; b.classList.toggle('off', !o); };
 $('#soundBtn').addEventListener('click', ()=>{ Music.toggle(); syncSoundBtn(); }); syncSoundBtn();
+let lightZone = null, zoneLights = null;
 function tick(now){
   const dt = Math.min(.05, (now-last)/1000); last = now; t += dt;
   if(mode==='walk') updateWalk(dt); else if(mode==='cut') cutUpdate(dt); else animateWalk(player, 0, dt);
@@ -1897,7 +1898,13 @@ function tick(now){
     for(const g of clubPeople) g.visible = area==='bar' && !talk;
     for(const g of crowd) g.visible = area==='street' && (!talk || sc==='bar');
     bouncer.visible = (area==='street' && (!talk || sc==='bar'));
-    boss.visible = sc==='office'; client.visible = sc==='cafe'; chief.visible = sc==='final'; }
+    boss.visible = sc==='office'; client.visible = sc==='cafe'; chief.visible = sc==='final';
+    /* свет: горит только та зона, где сейчас герой (улица, клуб или комната) */
+    const zone = (sc && sc !== 'bar') ? sc : area;
+    if(zone !== lightZone){ lightZone = zone;
+      if(!zoneLights){ zoneLights = []; scene.traverse(o=>{ if((o.isPointLight || o.isSpotLight) && o.parent === scene){ const p = o.position;
+        zoneLights.push([o, p.x < 40 ? 'street' : (Math.abs(p.z-40) < 15 ? 'bar' : Math.abs(p.z) < 15 ? 'office' : Math.abs(p.z+40) < 15 ? 'cafe' : 'final')]); } }); }
+      for(const [l, z] of zoneLights) l.visible = z === zone; } }
   soundTick(dt);
   updateCamera(dt);
   renderer.render(scene, camera);
